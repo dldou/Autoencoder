@@ -8,6 +8,7 @@ Created on Thu Nov 17 14:21:44 2022
 
 import torch.nn as nn
 
+
 class AutoEncoder(nn.Module):
 
     def __init__(self):
