@@ -9,6 +9,7 @@ Created on Thu Nov 17 14:21:52 2022
 import torch
 import matplotlib.pyplot as plt
 from torch.autograd import Variable
+import random
 
 
 def saveModel(model, file_path):
@@ -55,7 +56,7 @@ def train_epoch(model, optimizer, criterion,
                 train_loader, 
                 device):
 
-    loss     = 0.0
+    loss = 0.0
 
     for i, (images, labels) in enumerate(train_loader, 0):
         
@@ -64,10 +65,11 @@ def train_epoch(model, optimizer, criterion,
             #Zero the gradient 
             optimizer.zero_grad()
             #Predictions 
-            images_hat = model(images)
-            images_hat.to(device)
-            #Loss (CrossEntropy mustn't have the channel param)
-            loss = criterion(images_hat.squeeze(), images.squeeze())
+            predicted_images = model(images)
+            predicted_images.to(device)
+            #Loss
+            loss = criterion(predicted_images, images)
+            #print("training loss: ", loss)
             #Upgrade the gradients (backpropagate) and the optimizer
             loss.backward()
             optimizer.step()
@@ -82,7 +84,6 @@ def validate_epoch(model, optimizer, criterion,
     losses          = []
     loss            = 0.0
     accuracy        = 0.0
-    nof_predictions = 0.0
 
     #Fasten the inference by setting every requires_grad to False
     with torch.no_grad():
@@ -94,14 +95,26 @@ def validate_epoch(model, optimizer, criterion,
             outputs = model(images)
             outputs.to(device)
             #Compute the loss on the batch
-            loss = criterion(images.squeeze(), outputs.squeeze())
+            loss = criterion(images, outputs)
+            #print("validation loss: ", loss)
             losses.append(loss)
-            #Update 
-            nof_predictions += images.size(0)
+    
+    ###############################
+    #  Definition of loss ratio r #
+    ###############################
+    #
+    # loss ratio = loss / maximum loss theoritically possible
+    # 
+    # accuracy = 100*(1 - r)
+    #
+    # For further details on the calcul of the accuracy, one may refer to the ReadMe.me file 
+    ###############################
 
-    print("losses", losses)
-    #Accuracy is the mean of loss on each batch
-    accuracy = (sum(losses)/nof_predictions).item()
+    #With nomalization, max is 1 for tensors' values
+    max_theorical_loss = (2*1)**2
+    #Number of pixels in each images of dataset is test_loader.dataset[0][0].squeeze().numel()
+    loss_ratio = sum(losses)/(max_theorical_loss * test_loader.dataset[0][0].squeeze().numel()) 
+    accuracy = 100*(1 - loss_ratio)
 
     return accuracy
 
@@ -144,3 +157,48 @@ def train_model(model, train_loader, test_loader,
             best_accuracy = epoch_accuracy
 
     return model
+
+
+def plot_results(model, test_loader,
+                 device):
+    """
+    Display few images and outputs to compare them 
+    """
+
+    fig = plt.figure(figsize=(10,10))
+
+    #Display 4*4=16 images
+    for i in range(int(16/2)):
+
+        #Select a random image in the dataset
+        nof_images = len(test_loader.dataset)
+        idx = random.randrange(nof_images)
+        #Inference
+        image = test_loader.dataset[idx][0].unsqueeze(0).to(device)
+        with torch.no_grad():
+            model.eval()
+            rebuilt_image = model(image)
+            #print(torch.max(model(image), 1).indices[0].item())
+        #Sent back the image to the CPU
+        image = image.squeeze().to('cpu')
+        rebuilt_image = rebuilt_image.squeeze().to('cpu')
+
+        #Plot
+
+        ax_image = plt.subplot(4,4, 2*i+1 )
+        ax_image.set_title("Real image")
+        plt.imshow(image, cmap='gray_r')
+        plt.axis('off')
+
+        ax_rebuild_image = plt.subplot(4,4, 2*(i+1) )
+        ax_rebuild_image.set_title("Rebuilt image")
+        plt.imshow(rebuilt_image, cmap='gray_r')
+        plt.axis('off')
+    
+    fig.suptitle("{} on few examples\n Reached accuracy with 15 epochs: 99.9862%".format(model.__class__.__name__))
+
+    #Save
+    plt.savefig(str(model.__class__.__name__) + "_accuraccy_99.9862" + ".pdf")
+
+    #Show
+    plt.show()
